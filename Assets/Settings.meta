@@ -1,0 +1,13 @@
+fileFormatVersion: 2
+<<<<<<<< HEAD:Assets/Settings.meta
+guid: 45acd887365089d45b3e8b86959e5779
+folderAsset: yes
+DefaultImporter:
+========
+guid: c389ee2c03db3584fb0c02ad851981e4
+AssemblyDefinitionReferenceImporter:
+>>>>>>>> master:Assets/Editor/Material Inspectors/GUIStreamline/URP/Unity.RenderPipelines.Universal.Editor.asmref.meta
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
