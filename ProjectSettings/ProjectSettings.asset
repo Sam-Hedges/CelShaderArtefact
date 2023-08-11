@@ -779,7 +779,7 @@ PlayerSettings:
   webGLThreadsSupport: 0
   webGLDecompressionFallback: 0
   scriptingDefineSymbols:
-    Standalone: CHROMA_URP;CHROMA_SG;UNITY_PIPELINE_URP
+    Standalone: UNITY_PIPELINE_URP;CHROMA_URP;CHROMA_SG
   additionalCompilerArguments: {}
   platformArchitecture: {}
   scriptingBackend: {}
