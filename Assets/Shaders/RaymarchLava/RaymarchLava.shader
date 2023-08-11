@@ -69,11 +69,11 @@ Shader "Unlit/RaymarchLava"
 				float3 hitPosition;	// the point of contact with the surface
 			};
 
-            Ray GenerateRay(const float3 cameraPos, const float3 worldPos) {
-				Ray r;
-				r.origin    = cameraPos;
-				r.direction = normalize(worldPos - cameraPos);
-				return r;
+            Ray GenerateRay(const float3 cameraPos, const float3 objectPosition) {
+				Ray ray;
+				ray.origin = mul(unity_WorldToObject, float4(cameraPos ,1)).xyz;
+				ray.direction = normalize(objectPosition - ray.origin);
+				return ray;
 			}
             
             // The vertex shader definition with properties defined in the Varyings 
@@ -84,7 +84,7 @@ Shader "Unlit/RaymarchLava"
                 Varyings output;
                 output.positionCS = mul(UNITY_MATRIX_VP, mul(unity_ObjectToWorld, float4(input.positionOS.xyz, 1.0)));
                 output.positionWS = mul(unity_ObjectToWorld, input.positionOS).xyz;
-            	output.positionOS = input.positionOS;
+            	output.positionOS = input.positionOS.xyz;
                 output.screenPos   = ComputeScreenPos(output.positionCS);
                 output.uv = TRANSFORM_TEX(input.uv, _BaseMap);
                 return output;
@@ -98,20 +98,19 @@ Shader "Unlit/RaymarchLava"
             float GetDistance(float3 position)
             {
                 const float sphere = SignedDistanceSphere(position, _SpherePosition.xyz, _SphereSize);
-                //const float sphere = length(position) - 0.5f;
                 return sphere;  
             }
 
 			float3 GetNormal(float3 p) {
 				float2 e = float2(1e-2, 0);
 
-				float3 n = GetDistance(p) - float3(
+				const float3 normal = GetDistance(p) - float3(
 					GetDistance(p-e.xyy),
 					GetDistance(p-e.yxy),
 					GetDistance(p-e.yyx)
 				);
 
-				return normalize(n);
+				return normalize(normal);
 			}
             
             bool MarchRay(const Ray InRay, out rOut outS)
@@ -133,12 +132,7 @@ Shader "Unlit/RaymarchLava"
             // The fragment shader definition.            
             float4 Fragment (Varyings input) : SV_Target
             {
-				float2 uv = input.uv - 0.5;
-            	Ray ray;
-            	ray.origin = mul(unity_WorldToObject, float4(_WorldSpaceCameraPos,1));
-            	ray.direction = normalize(input.positionOS - ray.origin);
-            	
-	            //Ray ray = GenerateRay(_WorldSpaceCameraPos, input.positionWS);
+	            Ray ray = GenerateRay(_WorldSpaceCameraPos, input.positionOS);
                 rOut outS;
 
 				float4 colour = 0;
@@ -151,16 +145,6 @@ Shader "Unlit/RaymarchLava"
 
             	discard;
             	return colour;
-                
-            	
-                //float distance = RayMarch(ray);
-                //float4 col = 0;
-                //if (distance < MAX_DISTANCE)
-                //{
-                //    col.r = 1;
-                //}
-                
-                //return col;
             }
             
             ENDHLSL
