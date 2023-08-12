@@ -6,8 +6,11 @@ Shader "Unlit/RaymarchLava"
     { 
         _BaseMap("Albedo", 2D) = "white" {}
         _BaseColor("Color", Color) = (1,1,1,1)
+    	_Smoothness("Smoothness", Float) = 1
         _SpherePosition("Sphere Position", Vector) = (0, 0, 0, 0)
+    	_SpherePosition2("Sphere Position 2", Vector) = (0, 0, 0, 0)
         _SphereSize("Sphere Size", Float) = 1
+	    _SphereSize2("Sphere Size 2", Float) = 1
     }
 
     // The SubShader block containing the Shader code. 
@@ -28,18 +31,25 @@ Shader "Unlit/RaymarchLava"
             // The Core.hlsl file contains definitions of frequently used HLSL
             // macros and functions, and also contains #include references to other
             // HLSL files (for example, Common.hlsl, SpaceTransforms.hlsl, etc.).
-            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"            
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+
+            // My custom SDF functions
+            #include "SignedDistanceFunctions.hlsl"
 
 			#define MAX_STEPS 100
             #define MAX_DISTANCE 100.0
-            #define SURFACE_DISTANCE 1e-3
+            #define SURFACE_DISTANCE 1e-5
+            #define TIMESCALE 1
             
             TEXTURE2D(_BaseMap);
             SAMPLER(sampler_BaseMap);
             float4 _BaseMap_ST;
             half4 _BaseColor;
+            float _Smoothness;
             float4 _SpherePosition;
             float _SphereSize;
+            float4 _SpherePosition2;
+            float _SphereSize2;
             
             // The structure definition defines which variables it contains.
             // This example uses the Attributes structure as an input structure in
@@ -97,12 +107,16 @@ Shader "Unlit/RaymarchLava"
             
             float GetDistance(float3 position)
             {
-                const float sphere = SignedDistanceSphere(position, _SpherePosition.xyz, _SphereSize);
+                float sphere1 = SignedDistanceSphere(position, _SpherePosition.xyz, _SphereSize);
+            	float sphere2 = SignedDistanceSphere(position, _SpherePosition2.xyz, _SphereSize2);
+
+            	float sphere = SmoothCombine(sphere1, sphere2, _Smoothness);
+            	
                 return sphere;  
             }
 
 			float3 GetNormal(float3 p) {
-				float2 e = float2(1e-2, 0);
+				float2 e = float2(SURFACE_DISTANCE, 0);
 
 				const float3 normal = GetDistance(p) - float3(
 					GetDistance(p-e.xyy),
@@ -142,7 +156,7 @@ Shader "Unlit/RaymarchLava"
                     colour.rgb = GetNormal(outS.hitPosition);
             		return colour;
             	}
-
+            	
             	discard;
             	return colour;
             }
