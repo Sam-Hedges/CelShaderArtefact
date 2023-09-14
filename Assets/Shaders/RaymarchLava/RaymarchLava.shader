@@ -7,10 +7,8 @@ Shader "Unlit/RaymarchLava"
         _BaseMap("Albedo", 2D) = "white" {}
         _BaseColor("Color", Color) = (1,1,1,1)
     	_Smoothness("Smoothness", Float) = 1
-        _SpherePosition("Sphere Position", Vector) = (0, 0, 0, 0)
-    	_SpherePosition2("Sphere Position 2", Vector) = (0, 0, 0, 0)
         _SphereSize("Sphere Size", Float) = 1
-	    _SphereSize2("Sphere Size 2", Float) = 1
+        _PositionOffset("Position", vector) = (0, 0, 0, 0)
     }
 
     // The SubShader block containing the Shader code. 
@@ -18,14 +16,19 @@ Shader "Unlit/RaymarchLava"
     {
         // SubShader Tags define when and under which conditions a SubShader block or
         // a pass is executed.
-        Tags { "RenderType" = "Opaque" "RenderPipeline" = "UniversalRenderPipeline" }
-
+        Tags { "RenderType" = "Transparent" "RenderPipeline" = "UniversalRenderPipeline" }
+		
+        // The blend mode determines how the color from this object blends with what's already rendered to the buffer
+        Blend SrcAlpha OneMinusSrcAlpha 
+        
         Pass
         {
-            // The HLSL code block. Unity SRP uses the HLSL language.
-            HLSLPROGRAM
-
-            #pragma vertex Vertex
+        	Name "LitForward"
+    		Tags { "LightMode"="UniversalForward" }
+    		
+	        HLSLPROGRAM
+            
+            #pragma vertex Vertex	
             #pragma fragment Fragment
 
             // The Core.hlsl file contains definitions of frequently used HLSL
@@ -36,24 +39,24 @@ Shader "Unlit/RaymarchLava"
             // My custom SDF functions
             #include "SignedDistanceFunctions.hlsl"
 
-			#define MAX_STEPS 100
-            #define MAX_DISTANCE 100.0
-            #define SURFACE_DISTANCE 1e-5
-            #define TIMESCALE 1
-            
+            // Constants for ray marching algorithm
+			#define MAX_STEPS 100 // The maximum number of iterations or "steps" the ray marching algorithm will take when attempting to find a surface
+            #define MAX_DISTANCE 100.0 // The maximum distance the ray will travel (or "march") from its origin
+            #define SURFACE_DISTANCE 5e-5 // Defines the minimum distance to a surface at which the ray is considered to have "hit" the surface. 
+            #define TIMESCALE 0.6
+	        
+
+	        // Shader properties
             TEXTURE2D(_BaseMap);
             SAMPLER(sampler_BaseMap);
             float4 _BaseMap_ST;
             half4 _BaseColor;
             float _Smoothness;
-            float4 _SpherePosition;
             float _SphereSize;
-            float4 _SpherePosition2;
-            float _SphereSize2;
+	        float4 _PositionOffset;
+
             
-            // The structure definition defines which variables it contains.
-            // This example uses the Attributes structure as an input structure in
-            // the vertex shader.
+            // Define the structure of input vertex attributes
             struct Attributes
             {
                 float4 positionOS   : POSITION;
@@ -61,6 +64,7 @@ Shader "Unlit/RaymarchLava"
                 float2 uv     : TEXCOORD0;
             };
 
+	        // Define the structure of the vertex-to-fragment interpolants
             struct Varyings
             {
                 float2 uv : TEXCOORD0;
@@ -70,6 +74,7 @@ Shader "Unlit/RaymarchLava"
                 float4 screenPos : TEXCOORD3;
             };
 
+	        // Define the ray structure for ray marching
             struct Ray {
 				float3 origin;
 				float3 direction;
@@ -79,6 +84,7 @@ Shader "Unlit/RaymarchLava"
 				float3 hitPosition;	// the point of contact with the surface
 			};
 
+	        // Generate a ray given the camera and object positions
             Ray GenerateRay(const float3 cameraPos, const float3 objectPosition) {
 				Ray ray;
 				ray.origin = mul(unity_WorldToObject, float4(cameraPos ,1)).xyz;
@@ -86,9 +92,7 @@ Shader "Unlit/RaymarchLava"
 				return ray;
 			}
             
-            // The vertex shader definition with properties defined in the Varyings 
-            // structure. The type of the vert function must match the type (struct)
-            // that it returns.
+	        // Processes each vertex and outputs interpolated values for the fragment shader
             Varyings Vertex (Attributes input)
             {   
                 Varyings output;
@@ -100,21 +104,37 @@ Shader "Unlit/RaymarchLava"
                 return output;
             }
 
+	        // Calculate signed distance from a point to a sphere's surface
             float SignedDistanceSphere(float3 position, float3 center, float radius)
             {
                 return length(center - position) - radius;
             }
-            
+
+	        // Get distance value from the point to the nearest surface in the "scene"
             float GetDistance(float3 position)
             {
-                float sphere1 = SignedDistanceSphere(position, _SpherePosition.xyz, _SphereSize);
-            	float sphere2 = SignedDistanceSphere(position, _SpherePosition2.xyz, _SphereSize2);
+				float time = _Time.y * TIMESCALE;
+            	position -= _PositionOffset.xyz / 100;
 
-            	float sphere = SmoothCombine(sphere1, sphere2, _Smoothness);
+				float3 spherePos1 = float3(sin(time * 0.337), sin(time * -0.989), abs(sin(time * 0.428))) ;
+            	float3 spherePos2 = float3(sin(time * -0.214), sin(time * 0.56), abs(sin(time * -0.725)));
+            	float3 spherePos3 = float3(sin(time * -0.671), sin(time * 0.773), abs(sin(time * 0.272)));
+
+            	float3 moveScale = float3(0.005, 0.005, 0.15);
             	
-                return sphere;  
+                float sphere1 = SignedDistanceSphere(position, spherePos1 * moveScale, _SphereSize / 100 * 0.5);
+            	float sphere2 = SignedDistanceSphere(position, spherePos2 * moveScale, _SphereSize / 100 * 0.75);
+            	float sphere3 = SignedDistanceSphere(position, spherePos3 * moveScale, _SphereSize / 100);
+            	float sphere4 = SignedDistanceSphere(position, 0, 0.045);	
+
+            	float spheres = SmoothCombine(sphere1, sphere2, _Smoothness);
+            	spheres = SmoothCombine(spheres, sphere3, _Smoothness);
+            	spheres = SmoothCombine(spheres, sphere4, _Smoothness);
+            	
+                return spheres;  
             }
 
+	        // Calculate the surface normal at a point in the scene
 			float3 GetNormal(float3 p) {
 				float2 e = float2(SURFACE_DISTANCE, 0);
 
@@ -153,15 +173,260 @@ Shader "Unlit/RaymarchLava"
             	
             	if(MarchRay(ray, outS))
             	{
-                    colour.rgb = GetNormal(outS.hitPosition);
-            		return colour;
+                    float3 normal = GetNormal(outS.hitPosition);
+            		
+            		float height = outS.hitPosition.z;
+            		height = 1 - (height -0.15) * 7.5;
+
+            		float rdDotN = dot(ray.direction, normal);
+            		float gradient = rdDotN * height;
+					float2 gradientUV = clamp(gradient * gradient, 0.01, 1.0);
+						
+            		//return gradient; float4(normal, gradient);
+					return SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, gradientUV) * _BaseColor;
             	}
-            	
+
             	discard;
             	return colour;
             }
             
             ENDHLSL
         }
+
+		Pass 
+		{
+    		Name "ShadowCaster"
+    		Tags { "LightMode"="ShadowCaster" }
+ 		
+    		ZWrite On
+    		ZTest LEqual
+ 		
+    		HLSLPROGRAM
+    		
+    		// Required to compile gles 2.0 with standard srp library
+    		#pragma prefer_hlslcc gles
+    		#pragma exclude_renderers d3d11_9x gles
+    		//#pragma target 4.5
+ 		
+    		// Material Keywords
+    		#pragma shader_feature _ALPHATEST_ON
+    		#pragma shader_feature _SMOOTHNESS_TEXTURE_ALBEDO_CHANNEL_A
+ 		
+    		// GPU Instancing
+    		#pragma multi_compile_instancing
+    		#pragma multi_compile _ DOTS_INSTANCING_ON
+    		         
+    		#pragma vertex ShadowPassVertex
+    		#pragma fragment ShadowPassFragment
+    		
+			// The Core.hlsl file contains definitions of frequently used HLSL
+            // macros and functions, and also contains #include references to other
+            // HLSL files (for example, Common.hlsl, SpaceTransforms.hlsl, etc.).
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+    		#include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Shadows.hlsl"
+
+            // My custom SDF functions
+            #include "SignedDistanceFunctions.hlsl"
+    		
+			// Constants for ray marching algorithm
+			#define MAX_STEPS 100 // The maximum number of iterations or "steps" the ray marching algorithm will take when attempting to find a surface
+            #define MAX_DISTANCE 100.0 // The maximum distance the ray will travel (or "march") from its origin
+            #define SURFACE_DISTANCE 5e-5 // Defines the minimum distance to a surface at which the ray is considered to have "hit" the surface. 
+            #define TIMESCALE 0.6
+
+    		// Shader properties
+            TEXTURE2D(_BaseMap);
+            SAMPLER(sampler_BaseMap);
+            float4 _BaseMap_ST;
+            half4 _BaseColor;
+            float _Smoothness;
+            float _SphereSize;
+	        float4 _PositionOffset;
+    		half _Cutoff = 0.5;
+
+
+			// Shadow Casting Light geometric parameters. These variables are used when applying the shadow Normal Bias and are set by UnityEngine.Rendering.Universal.ShadowUtils.SetupShadowCasterConstantBuffer in com.unity.render-pipelines.universal/Runtime/ShadowUtils.cs
+			// For Directional lights, _LightDirection is used when applying shadow Normal Bias.
+			// For Spot lights and Point lights, _LightPosition is used to compute the actual light direction because it is different at each shadow caster geometry vertex.
+			float3 _LightDirection;
+			float3 _LightPosition;
+
+    		
+			// Define the structure of input vertex attributes
+            struct Attributes
+            {
+                float4 positionOS   : POSITION;
+                float3 normalOS     : NORMAL;
+                float2 uv     : TEXCOORD0;
+            };
+
+	        // Define the structure of the vertex-to-fragment interpolants
+            struct Varyings
+            {
+                float2 uv : TEXCOORD0;
+                float4 positionCS : SV_POSITION;
+                float3 positionWS : TEXCOORD1;
+            	float3 positionOS : TEXCOORD2;
+                float4 screenPos : TEXCOORD3;
+            };
+
+	        // Define the ray structure for ray marching
+            struct Ray {
+				float3 origin;
+				float3 direction;
+			};
+
+            struct rOut {								
+				float3 hitPosition;	// the point of contact with the surface
+			};
+
+	        // Generate a ray given the camera and object positions
+            Ray GenerateRay(const float3 cameraPos, const float3 objectPosition) {
+				Ray ray;
+				ray.origin = mul(unity_WorldToObject, float4(cameraPos ,1)).xyz;
+				ray.direction = normalize(objectPosition - ray.origin);
+				return ray;
+			}
+			
+			float4 GetShadowPositionHClip(Attributes input)
+			{
+			    float3 positionWS = TransformObjectToWorld(input.positionOS.xyz);
+			    float3 normalWS = TransformObjectToWorldNormal(input.normalOS);
+			
+			#if _CASTING_PUNCTUAL_LIGHT_SHADOW
+			    float3 lightDirectionWS = normalize(_LightPosition - positionWS);
+			#else
+			    float3 lightDirectionWS = _LightDirection;
+			#endif
+			
+			    float4 positionCS = TransformWorldToHClip(ApplyShadowBias(positionWS, normalWS, lightDirectionWS));
+			
+			#if UNITY_REVERSED_Z
+			    positionCS.z = min(positionCS.z, UNITY_NEAR_CLIP_VALUE);
+			#else
+			    positionCS.z = max(positionCS.z, UNITY_NEAR_CLIP_VALUE);
+			#endif
+			
+			    return positionCS;
+			}
+			
+			Varyings ShadowPassVertex(Attributes input)
+			{
+			    Varyings output;
+			    UNITY_SETUP_INSTANCE_ID(input);
+			
+			    output.uv = TRANSFORM_TEX(input.uv, _BaseMap);
+			    output.positionCS = GetShadowPositionHClip(input);
+			    return output;
+			}
+
+			half Alpha(half albedoAlpha, half4 color, half cutoff)
+			{
+			#if !defined(_SMOOTHNESS_TEXTURE_ALBEDO_CHANNEL_A) && !defined(_GLOSSINESS_FROM_BASE_ALPHA)
+			    half alpha = albedoAlpha * color.a;
+			#else
+			    half alpha = color.a;
+			#endif
+			
+			#if defined(_ALPHATEST_ON)
+			    clip(alpha - cutoff);
+			#endif
+			
+			    return alpha;
+			}
+			
+			half4 SampleAlbedoAlpha(float2 uv, TEXTURE2D_PARAM(albedoAlphaMap, sampler_albedoAlphaMap))
+			{
+			    return half4(SAMPLE_TEXTURE2D(albedoAlphaMap, sampler_albedoAlphaMap, uv));
+			}
+
+			// Calculate signed distance from a point to a sphere's surface
+            float SignedDistanceSphere(float3 position, float3 center, float radius)
+            {
+                return length(center - position) - radius;
+            }
+
+	        // Get distance value from the point to the nearest surface in the "scene"
+            float GetDistance(float3 position)
+            {
+				float time = _Time.y * TIMESCALE;
+            	position -= _PositionOffset.xyz / 100;
+
+				float3 spherePos1 = float3(sin(time * 0.337), sin(time * -0.989), abs(sin(time * 0.428))) ;
+            	float3 spherePos2 = float3(sin(time * -0.214), sin(time * 0.56), abs(sin(time * -0.725)));
+            	float3 spherePos3 = float3(sin(time * -0.671), sin(time * 0.773), abs(sin(time * 0.272)));
+
+            	float3 moveScale = float3(0.005, 0.005, 0.15);
+            	
+                float sphere1 = SignedDistanceSphere(position, spherePos1 * moveScale, _SphereSize / 100 * 0.5);
+            	float sphere2 = SignedDistanceSphere(position, spherePos2 * moveScale, _SphereSize / 100 * 0.75);
+            	float sphere3 = SignedDistanceSphere(position, spherePos3 * moveScale, _SphereSize / 100);
+            	float sphere4 = SignedDistanceSphere(position, 0, 0.045);	
+
+            	float spheres = SmoothCombine(sphere1, sphere2, _Smoothness);
+            	spheres = SmoothCombine(spheres, sphere3, _Smoothness);
+            	spheres = SmoothCombine(spheres, sphere4, _Smoothness);
+            	
+                return spheres;  
+            }
+
+	        // Calculate the surface normal at a point in the scene
+			float3 GetNormal(float3 p) {
+				float2 e = float2(SURFACE_DISTANCE, 0);
+
+				const float3 normal = GetDistance(p) - float3(
+					GetDistance(p-e.xyy),
+					GetDistance(p-e.yxy),
+					GetDistance(p-e.yyx)
+				);
+
+				return normalize(normal);
+			}
+            
+            bool MarchRay(const Ray InRay, out rOut outS)
+			{													
+            	float distance = 0.0;
+
+                for (int i = 0; i < MAX_STEPS; i++) {
+	                const float3 position = InRay.origin + InRay.direction * distance;
+	                const float sceneDistance = GetDistance(position);
+        			distance += sceneDistance;
+        			outS.hitPosition = position;
+        			if (sceneDistance < SURFACE_DISTANCE) return true; // surface hit
+        			if (distance > MAX_DISTANCE) break; // exit if marched too far
+				}
+                
+                return false;
+			}
+    		
+			half4 ShadowPassFragment(Varyings input) : SV_TARGET
+			{
+				Ray ray = GenerateRay(_WorldSpaceCameraPos, input.positionOS);
+                rOut outS;
+
+				float4 colour = 0;
+            	
+            	if(MarchRay(ray, outS))
+            	{
+                    float3 normal = GetNormal(outS.hitPosition);
+            		
+            		float height = outS.hitPosition.z;
+            		height = 1 - (height -0.15) * 7.5;
+
+            		float rdDotN = dot(ray.direction, normal);
+            		float gradient = rdDotN * height;
+					float2 gradientUV = clamp(gradient * gradient, 0.01, 1.0);
+						
+            		//return gradient; float4(normal, gradient);
+					return SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, gradientUV) * _BaseColor;
+            	}
+				
+				
+			    Alpha(SampleAlbedoAlpha(input.uv, TEXTURE2D_ARGS(_BaseMap, sampler_BaseMap)).a, _BaseColor, _Cutoff);
+			    return 0;
+			}
+    		
+    		ENDHLSL
+		}
     }
 }
